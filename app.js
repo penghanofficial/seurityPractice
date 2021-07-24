@@ -43,7 +43,8 @@ mongoose.set('useCreateIndex', true);
 const userSchema = new mongoose.Schema({
   email: String,
   password: String,
-  googleId: String
+  googleId: String,
+  secret: String
 });
 
 userSchema.plugin(passportLocalMongoose);
@@ -71,7 +72,9 @@ passport.use(new GoogleStrategy({
   },
   function(accessToken, refreshToken, profile, cb) {
     console.log(profile);
-    User.findOrCreate({ googleId: profile.id }, function (err, user) {
+    User.findOrCreate({
+      googleId: profile.id
+    }, function(err, user) {
       return cb(err, user);
     });
   }
@@ -84,14 +87,16 @@ app.get("/", function(req, res) {
 app.route('/auth/google')
   .get(passport.authenticate('google', {
     scope: ['profile']
-}));
+  }));
 
 app.get('/auth/google/secrets',
-  passport.authenticate('google', { failureRedirect: '/login' }),
+  passport.authenticate('google', {
+    failureRedirect: '/login'
+  }),
   function(req, res) {
     // Successful authentication, redirect home.
     res.redirect('/secrets');
-});
+  });
 
 app.get("/login", function(req, res) {
   res.render("login");
@@ -102,14 +107,18 @@ app.get("/register", function(req, res) {
 });
 
 app.get('/secrets', function(req, res) {
-  if (req.isAuthenticated()) {
-    res.render('secrets');
-  } else {
-    res.redirect('/login');
-  }
+  User.find({'secret':{$ne: null}}, function(err, foundUser){
+    if(err){
+      console.log(err);
+    }else{
+      if(foundUser){
+        res.render('secrets', {usersWithSecrets: foundUser})
+      }
+    }
+  })
 });
 
-app.get('/submit', function(req, res){
+app.get('/submit', function(req, res) {
   if (req.isAuthenticated()) {
     res.render('submit');
   } else {
@@ -117,13 +126,31 @@ app.get('/submit', function(req, res){
   }
 })
 
-app.get("/logout", function(req, res){
+app.post('/submit', function(req, res){
+  const submittedSecret = req.body.secret;
+  User.findById(req.user.id, function(err, foundUser){
+    if(err){
+      console.log(err);
+    }else{
+      if(foundUser){
+        foundUser.secret = submittedSecret;
+        foundUser.save(function(){
+          res.redirect("/secrets");
+        });
+      }
+    }
+  });
+});
+
+app.get("/logout", function(req, res) {
   req.logout();
   res.redirect("/");
 });
 
 app.post("/register", function(req, res) {
-  User.register({ username: req.body.username}, req.body.password, function(err, user) {
+  User.register({
+    username: req.body.username
+  }, req.body.password, function(err, user) {
     if (err) {
       console.log(err);
       res.redirect("/register");
@@ -141,10 +168,10 @@ app.post("/login", function(req, res) {
     password: req.body.password
   });
 
-  req.login(user, function(err){
-    if(err){
+  req.login(user, function(err) {
+    if (err) {
       console.log(err);
-    }else{
+    } else {
       passport.authenticate('local')(req, res, function() {
         res.redirect('/secrets');
       });
@@ -152,10 +179,10 @@ app.post("/login", function(req, res) {
   });
 });
 
-app.listen(3000, function() {
-  console.log("Server started on port 3000");
+process.on('uncaughtException', function(err) {
+    console.log("Uncaught exception!", err);
 });
 
-process.on('uncaughtException', function (err) {
-   console.log(err);
+app.listen(3000, function() {
+  console.log("Server started on port 3000.");
 });
